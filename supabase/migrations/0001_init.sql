@@ -12,20 +12,36 @@ create table if not exists public.emails (
   body_text text null,
   body_html text null,
   attachments jsonb null,
-  tsv tsvector generated always as (
-    to_tsvector(
-      'simple',
-      coalesce(subject, '') || ' ' ||
-      coalesce(from_text, '') || ' ' ||
-      coalesce(array_to_string(to_text, ' '), '') || ' ' ||
-      coalesce(body_text, '')
-    )
-  ) stored
+  tsv tsvector null
 );
 
 create index if not exists emails_tsv_idx on public.emails using gin (tsv);
 create index if not exists emails_sent_at_idx on public.emails (sent_at desc);
 create index if not exists emails_from_idx on public.emails (from_text);
+
+create or replace function public.emails_set_tsv()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.tsv :=
+    to_tsvector(
+      'simple',
+      coalesce(new.subject, '') || ' ' ||
+      coalesce(new.from_text, '') || ' ' ||
+      coalesce(array_to_string(new.to_text, ' '), '') || ' ' ||
+      coalesce(new.body_text, '')
+    );
+  return new;
+end;
+$$;
+
+drop trigger if exists emails_set_tsv_trg on public.emails;
+create trigger emails_set_tsv_trg
+before insert or update of subject, from_text, to_text, body_text
+on public.emails
+for each row
+execute function public.emails_set_tsv();
 
 create table if not exists public.uploads (
   id uuid primary key,
