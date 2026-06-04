@@ -54,6 +54,7 @@ export default function AppClient() {
     const initJson = (await initRes.json()) as UploadInitResponse;
     const supabase = getSupabaseBrowser();
     const bucket = getTempBucketBrowser();
+    localStorage.setItem("epostscanner:lastUploadId", initJson.uploadId);
 
     setIndexState({
       kind: "uploading",
@@ -117,7 +118,15 @@ export default function AppClient() {
       done: json.done,
       errors: json.errors,
     });
+    if (json.done) localStorage.removeItem("epostscanner:lastUploadId");
   }, []);
+
+  useEffect(() => {
+    const uploadId = localStorage.getItem("epostscanner:lastUploadId");
+    if (!uploadId) return;
+    setIndexState({ kind: "indexing", uploadId, processed: 0, total: null, lastBatch: 0, done: false, errors: 0 });
+    runIndexBatch(uploadId).catch(() => undefined);
+  }, [runIndexBatch]);
 
   useEffect(() => {
     if (indexState.kind !== "indexing") return;
