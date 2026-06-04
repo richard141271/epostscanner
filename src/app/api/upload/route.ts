@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import { getSupabaseAdmin, getTempBucket } from "@/lib/supabaseAdmin";
 
+export const runtime = "nodejs";
+
 const BodySchema = z.object({
   files: z
     .array(

@@ -6,6 +6,9 @@ import unzipper from "unzipper";
 import { getSupabaseAdmin, getTempBucket } from "@/lib/supabaseAdmin";
 import { parseEmlStream } from "@/lib/eml/parseEml";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const BodySchema = z.object({
   uploadId: z.string().uuid(),
 });
