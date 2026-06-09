@@ -36,8 +36,23 @@ export default function AppClient() {
   const [selectedEmail, setSelectedEmail] = useState<EmailRecord | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailCount, setEmailCount] = useState<number | null>(null);
+  const [emailCountError, setEmailCountError] = useState<string | null>(null);
 
   const canSearch = useMemo(() => query.trim().length > 0, [query]);
+
+  const refreshEmailCount = useCallback(async () => {
+    try {
+      setEmailCountError(null);
+      const res = await fetch("/api/stats");
+      if (!res.ok) throw new Error(await res.text());
+      const json = (await res.json()) as { emailCount: number };
+      setEmailCount(json.emailCount ?? 0);
+    } catch (e) {
+      setEmailCountError(e instanceof Error ? e.message : "Kunne ikke hente antall e-poster");
+      setEmailCount(null);
+    }
+  }, []);
 
   const startUpload = useCallback(async (files: File[]) => {
     setHits([]);
@@ -147,7 +162,8 @@ export default function AppClient() {
       errors: json.errors,
     });
     if (json.done) localStorage.removeItem("epostscanner:lastUploadId");
-  }, []);
+    if (json.done) refreshEmailCount().catch(() => undefined);
+  }, [refreshEmailCount]);
 
   useEffect(() => {
     const uploadId = localStorage.getItem("epostscanner:lastUploadId");
@@ -155,6 +171,10 @@ export default function AppClient() {
     setIndexState({ kind: "indexing", uploadId, processed: 0, total: null, lastBatch: 0, done: false, errors: 0 });
     runIndexBatch(uploadId).catch(() => undefined);
   }, [runIndexBatch]);
+
+  useEffect(() => {
+    refreshEmailCount().catch(() => undefined);
+  }, [refreshEmailCount]);
 
   useEffect(() => {
     if (indexState.kind !== "indexing") return;
@@ -221,6 +241,35 @@ export default function AppClient() {
       <p style={{ marginTop: 8, opacity: 0.8 }}>
         Last opp EML/ZIP, indekser, og søk i fulltekst.
       </p>
+      <div style={{ marginTop: 12, padding: 12, border: "1px solid #e5e7eb", borderRadius: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ fontSize: 13 }}>
+            {emailCountError ? (
+              <span style={{ color: "#b91c1c" }}>Kunne ikke hente antall e-poster</span>
+            ) : emailCount === null ? (
+              <span style={{ opacity: 0.8 }}>Henter antall e-poster…</span>
+            ) : (
+              <span>
+                <span style={{ fontWeight: 700 }}>{formatNumber(emailCount)}</span> e-poster tilgjengelig i databasen
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => refreshEmailCount().catch(() => undefined)}
+            disabled={indexState.kind === "uploading"}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 10,
+              border: "1px solid #d1d5db",
+              background: "white",
+              cursor: indexState.kind === "uploading" ? "not-allowed" : "pointer",
+            }}
+          >
+            Oppdater
+          </button>
+        </div>
+      </div>
 
       <section style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr", marginTop: 16 }}>
         <UploadDropzone onFiles={startUpload} disabled={indexState.kind === "uploading" || indexState.kind === "indexing"} />
@@ -430,6 +479,14 @@ function formatBytes(bytes: number) {
   if (mb < 1024) return `${mb.toFixed(1)} MB`;
   const gb = mb / 1024;
   return `${gb.toFixed(1)} GB`;
+}
+
+function formatNumber(n: number) {
+  try {
+    return new Intl.NumberFormat("no-NO").format(n);
+  } catch {
+    return String(n);
+  }
 }
 
 function uploadFileWithProgress(
