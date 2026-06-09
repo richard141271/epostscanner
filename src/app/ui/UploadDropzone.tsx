@@ -15,10 +15,12 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
 
   const pickFiles = useCallback(() => {
     if (disabled) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
     fileInputRef.current?.click();
   }, [disabled]);
   const pickFolder = useCallback(() => {
     if (disabled) return;
+    if (folderInputRef.current) folderInputRef.current.value = "";
     folderInputRef.current?.click();
   }, [disabled]);
 
@@ -47,7 +49,11 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
         );
         return;
       }
-      await onFiles(filtered);
+      try {
+        await onFiles(filtered);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Opplasting feilet");
+      }
     },
     [acceptHint, onFiles],
   );
