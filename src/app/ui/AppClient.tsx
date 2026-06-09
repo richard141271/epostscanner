@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "isomorphic-dompurify";
 
 import { UploadDropzone } from "./UploadDropzone";
@@ -43,8 +43,30 @@ export default function AppClient() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailCount, setEmailCount] = useState<number | null>(null);
   const [emailCountError, setEmailCountError] = useState<string | null>(null);
+  const [lastActivityAt, setLastActivityAt] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const lastActivitySetAtRef = useRef<number>(0);
 
   const canSearch = useMemo(() => query.trim().length > 0, [query]);
+  const isBusy = useMemo(
+    () => indexState.kind === "preparing" || indexState.kind === "uploading" || indexState.kind === "indexing",
+    [indexState.kind],
+  );
+
+  const bumpActivity = useCallback(() => {
+    const t = Date.now();
+    const last = lastActivitySetAtRef.current;
+    if (t - last < 800) return;
+    lastActivitySetAtRef.current = t;
+    setLastActivityAt(t);
+    setNowMs(t);
+  }, []);
+
+  useEffect(() => {
+    if (!isBusy) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isBusy]);
 
   const refreshEmailCount = useCallback(async () => {
     try {
@@ -68,6 +90,7 @@ export default function AppClient() {
 
     const bytesTotal = files.reduce((sum, f) => sum + (f.size || 0), 0);
     setIndexState({ kind: "preparing", total: files.length, bytesTotal });
+    bumpActivity();
 
     let initJson: UploadInitResponse;
     try {
@@ -90,6 +113,7 @@ export default function AppClient() {
     }
 
     localStorage.setItem("epostscanner:lastUploadId", initJson.uploadId);
+    bumpActivity();
 
     setIndexState({
       kind: "uploading",
@@ -116,6 +140,7 @@ export default function AppClient() {
         file,
         file.type || "application/octet-stream",
         (loaded) => {
+          bumpActivity();
           setIndexState((s) =>
             s.kind === "uploading"
               ? {
@@ -128,6 +153,7 @@ export default function AppClient() {
       );
 
       completedBytes += file.size || 0;
+      bumpActivity();
 
       setIndexState((s) =>
         s.kind === "uploading"
@@ -144,7 +170,8 @@ export default function AppClient() {
     setIndexState((s) =>
       s.kind === "uploading" ? { kind: "indexing", uploadId: s.uploadId, processed: 0, total: null, lastBatch: 0, done: false, errors: 0 } : s,
     );
-  }, []);
+    bumpActivity();
+  }, [bumpActivity]);
 
   const runIndexBatch = useCallback(async (uploadId: string) => {
     const res = await fetch("/api/index", {
@@ -175,9 +202,10 @@ export default function AppClient() {
       done: json.done,
       errors: json.errors,
     });
+    bumpActivity();
     if (json.done) localStorage.removeItem("epostscanner:lastUploadId");
     if (json.done) refreshEmailCount().catch(() => undefined);
-  }, [refreshEmailCount]);
+  }, [bumpActivity, refreshEmailCount]);
 
   useEffect(() => {
     const uploadId = localStorage.getItem("epostscanner:lastUploadId");
@@ -295,6 +323,10 @@ export default function AppClient() {
           }
         />
 
+        <div style={{ padding: 12, border: "1px solid #e5e7eb", borderRadius: 12 }}>
+          <StatusLine indexState={indexState} lastActivityAt={lastActivityAt} nowMs={nowMs} />
+        </div>
+
         <div style={{ padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
           <div style={{ display: "flex", gap: 8 }}>
             <input
@@ -407,6 +439,50 @@ export default function AppClient() {
         {indexState.kind === "ready" ? "Indeksering ferdig." : null}
       </footer>
     </main>
+  );
+}
+
+function StatusLine({
+  indexState,
+  lastActivityAt,
+  nowMs,
+}: {
+  indexState: IndexState;
+  lastActivityAt: number | null;
+  nowMs: number;
+}) {
+  const busy =
+    indexState.kind === "preparing" || indexState.kind === "uploading" || indexState.kind === "indexing";
+  const secondsAgo = lastActivityAt ? Math.max(0, Math.floor((nowMs - lastActivityAt) / 1000)) : null;
+
+  const left = (() => {
+    if (indexState.kind === "idle") return "Status: Klar";
+    if (indexState.kind === "preparing") return `Status: Forbereder opplasting (${indexState.total} filer)`;
+    if (indexState.kind === "uploading") {
+      const pct = indexState.bytesTotal ? Math.round((indexState.bytesUploaded / indexState.bytesTotal) * 100) : 0;
+      const rest = Math.max(0, indexState.bytesTotal - indexState.bytesUploaded);
+      return `Status: Laster opp (${indexState.uploaded}/${indexState.total}) · ${formatBytes(indexState.bytesUploaded)} / ${formatBytes(indexState.bytesTotal)} (${pct}%) · gjenstår ${formatBytes(rest)}${indexState.currentFile ? ` · ${indexState.currentFile}` : ""}`;
+    }
+    if (indexState.kind === "indexing") {
+      return `Status: Indekserer · behandlet ${indexState.processed}${indexState.total ? `/${indexState.total}` : ""} · siste batch ${indexState.lastBatch} · feil ${indexState.errors}`;
+    }
+    return "Status: Ferdig";
+  })();
+
+  const right = busy
+    ? secondsAgo === null
+      ? "Sist aktivitet: ukjent"
+      : `Sist aktivitet: ${secondsAgo}s siden`
+    : "";
+
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        {busy ? <span className="spinner" /> : null}
+        <span style={{ fontSize: 13 }}>{left}</span>
+      </div>
+      {right ? <span style={{ fontSize: 12, opacity: 0.75 }}>{right}</span> : null}
+    </div>
   );
 }
 
