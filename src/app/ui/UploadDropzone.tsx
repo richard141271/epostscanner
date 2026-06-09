@@ -5,9 +5,10 @@ import { useCallback, useMemo, useState } from "react";
 type Props = {
   onFiles: (files: File[]) => Promise<void> | void;
   disabled?: boolean;
+  statusMessage?: string | null;
 };
 
-export function UploadDropzone({ onFiles, disabled }: Props) {
+export function UploadDropzone({ onFiles, disabled, statusMessage }: Props) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,11 +206,15 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
           </div>
         </div>
 
-        {error ? (
-          <p style={{ marginTop: 12, color: "#b91c1c" }}>{error}</p>
-        ) : (
+        {error ? <p style={{ marginTop: 12, color: "#b91c1c" }}>{error}</p> : null}
+        {!error && statusMessage ? (
+          <p style={{ marginTop: 12, fontSize: 12, color: "#111827", opacity: 0.85 }}>
+            {statusMessage}
+          </p>
+        ) : null}
+        {!error && !statusMessage ? (
           <p style={{ marginTop: 12, opacity: 0.75, fontSize: 12 }}>{acceptHint}</p>
-        )}
+        ) : null}
       </div>
     </div>
   );

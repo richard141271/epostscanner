@@ -321,6 +321,15 @@ export default function AppClient() {
             indexState.kind === "uploading" ||
             indexState.kind === "indexing"
           }
+          statusMessage={
+            indexState.kind === "preparing"
+              ? `${indexState.total} filer valgt · starter opplasting…`
+              : indexState.kind === "uploading"
+                ? "Opplasting pågår…"
+                : indexState.kind === "indexing"
+                  ? "Indeksering pågår…"
+                  : null
+          }
         />
 
         <div style={{ padding: 12, border: "1px solid #e5e7eb", borderRadius: 12 }}>
