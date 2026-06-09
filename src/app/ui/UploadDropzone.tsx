@@ -54,10 +54,13 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
 
   const onChangeFiles = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const list = e.currentTarget.files;
+      const files = Array.from(e.currentTarget.files ?? []);
       e.currentTarget.value = "";
-      if (!list) return;
-      await handleFiles(Array.from(list));
+      if (!files.length) {
+        await handleFiles([]);
+        return;
+      }
+      await handleFiles(files);
     },
     [handleFiles],
   );
