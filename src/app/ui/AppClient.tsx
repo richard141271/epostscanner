@@ -9,6 +9,11 @@ import type { EmailRecord, SearchHit, UploadInitResponse } from "@/lib/types";
 type IndexState =
   | { kind: "idle" }
   | {
+      kind: "preparing";
+      total: number;
+      bytesTotal: number;
+    }
+  | {
       kind: "uploading";
       uploadId: string;
       uploaded: number;
@@ -61,21 +66,30 @@ export default function AppClient() {
     setSearchError(null);
     setEmailError(null);
 
-    const initRes = await fetch("/api/upload", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        files: files.map((f) => ({ name: f.name, size: f.size, type: f.type })),
-      }),
-    });
+    const bytesTotal = files.reduce((sum, f) => sum + (f.size || 0), 0);
+    setIndexState({ kind: "preparing", total: files.length, bytesTotal });
 
-    if (!initRes.ok) {
-      throw new Error(await initRes.text());
+    let initJson: UploadInitResponse;
+    try {
+      const initRes = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          files: files.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+        }),
+      });
+
+      if (!initRes.ok) {
+        throw new Error(await initRes.text());
+      }
+
+      initJson = (await initRes.json()) as UploadInitResponse;
+    } catch (e) {
+      setIndexState({ kind: "idle" });
+      throw e;
     }
 
-    const initJson = (await initRes.json()) as UploadInitResponse;
     localStorage.setItem("epostscanner:lastUploadId", initJson.uploadId);
-    const bytesTotal = files.reduce((sum, f) => sum + (f.size || 0), 0);
 
     setIndexState({
       kind: "uploading",
@@ -272,7 +286,14 @@ export default function AppClient() {
       </div>
 
       <section style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr", marginTop: 16 }}>
-        <UploadDropzone onFiles={startUpload} disabled={indexState.kind === "uploading" || indexState.kind === "indexing"} />
+        <UploadDropzone
+          onFiles={startUpload}
+          disabled={
+            indexState.kind === "preparing" ||
+            indexState.kind === "uploading" ||
+            indexState.kind === "indexing"
+          }
+        />
 
         <div style={{ padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
           <div style={{ display: "flex", gap: 8 }}>
@@ -357,6 +378,9 @@ export default function AppClient() {
 
       <footer style={{ marginTop: 16, opacity: 0.7, fontSize: 12 }}>
         {indexState.kind === "idle" ? "Klar." : null}
+        {indexState.kind === "preparing" ? (
+          <div>Forbereder opplasting… {indexState.total} filer · {formatBytes(indexState.bytesTotal)}</div>
+        ) : null}
         {indexState.kind === "uploading" ? (
           <div style={{ display: "grid", gap: 8 }}>
             <div>

@@ -58,10 +58,10 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
     [acceptHint, onFiles],
   );
 
-  const onChangeFiles = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.currentTarget.files ?? []);
-      e.currentTarget.value = "";
+  const onPickedFiles = useCallback(
+    async (input: HTMLInputElement) => {
+      const files = Array.from(input.files ?? []);
+      input.value = "";
       if (!files.length) {
         await handleFiles([]);
         return;
@@ -69,6 +69,20 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
       await handleFiles(files);
     },
     [handleFiles],
+  );
+
+  const onChangeFiles = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      await onPickedFiles(e.currentTarget);
+    },
+    [onPickedFiles],
+  );
+
+  const onInputFiles = useCallback(
+    async (e: React.FormEvent<HTMLInputElement>) => {
+      await onPickedFiles(e.currentTarget);
+    },
+    [onPickedFiles],
   );
 
   const onDrop = useCallback(
@@ -173,6 +187,7 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
         accept=".eml,.zip"
         style={{ display: "none" }}
         onChange={onChangeFiles}
+        onInput={onInputFiles}
         disabled={disabled}
       />
       <input
@@ -182,6 +197,7 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
         accept=".eml"
         style={{ display: "none" }}
         onChange={onChangeFiles}
+        onInput={onInputFiles}
         disabled={disabled}
         {...({ webkitdirectory: "true" } as unknown as Record<string, string>)}
       />
