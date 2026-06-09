@@ -223,7 +223,7 @@ export default function AppClient() {
       </p>
 
       <section style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr", marginTop: 16 }}>
-        <UploadDropzone onFiles={startUpload} />
+        <UploadDropzone onFiles={startUpload} disabled={indexState.kind === "uploading" || indexState.kind === "indexing"} />
 
         <div style={{ padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
           <div style={{ display: "flex", gap: 8 }}>

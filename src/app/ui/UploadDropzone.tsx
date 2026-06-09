@@ -4,16 +4,23 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 type Props = {
   onFiles: (files: File[]) => Promise<void> | void;
+  disabled?: boolean;
 };
 
-export function UploadDropzone({ onFiles }: Props) {
+export function UploadDropzone({ onFiles, disabled }: Props) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
-  const pickFiles = useCallback(() => fileInputRef.current?.click(), []);
-  const pickFolder = useCallback(() => folderInputRef.current?.click(), []);
+  const pickFiles = useCallback(() => {
+    if (disabled) return;
+    fileInputRef.current?.click();
+  }, [disabled]);
+  const pickFolder = useCallback(() => {
+    if (disabled) return;
+    folderInputRef.current?.click();
+  }, [disabled]);
 
   const acceptHint = useMemo(
     () => "EML-filer (.eml) eller ZIP (.zip).",
@@ -23,12 +30,21 @@ export function UploadDropzone({ onFiles }: Props) {
   const handleFiles = useCallback(
     async (files: File[]) => {
       setError(null);
+      if (!files.length) {
+        setError(
+          `Fikk ingen filer fra nettleseren. Prøv «Velg mappe» eller lag en ZIP. ${acceptHint}`,
+        );
+        return;
+      }
       const filtered = files.filter((f) => {
         const n = f.name.toLowerCase();
         return n.endsWith(".eml") || n.endsWith(".zip");
       });
       if (!filtered.length) {
-        setError(`Fant ingen støttede filer. ${acceptHint}`);
+        const summary = summarizeExtensions(files);
+        setError(
+          `Fant ingen støttede filer blant ${files.length} valgte. Støtter .eml og .zip. ${summary ? `Fant: ${summary}. ` : ""}${acceptHint}`,
+        );
         return;
       }
       await onFiles(filtered);
@@ -49,6 +65,7 @@ export function UploadDropzone({ onFiles }: Props) {
   const onDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
+      if (disabled) return;
       setDragging(false);
       setError(null);
 
@@ -64,7 +81,7 @@ export function UploadDropzone({ onFiles }: Props) {
         await handleFiles(Array.from(files));
       }
     },
-    [handleFiles],
+    [disabled, handleFiles],
   );
 
   return (
@@ -72,14 +89,17 @@ export function UploadDropzone({ onFiles }: Props) {
       <div
         onDragEnter={(e) => {
           e.preventDefault();
+          if (disabled) return;
           setDragging(true);
         }}
         onDragOver={(e) => {
           e.preventDefault();
+          if (disabled) return;
           setDragging(true);
         }}
         onDragLeave={(e) => {
           e.preventDefault();
+          if (disabled) return;
           setDragging(false);
         }}
         onDrop={onDrop}
@@ -87,7 +107,8 @@ export function UploadDropzone({ onFiles }: Props) {
           border: `2px dashed ${dragging ? "#111827" : "#d1d5db"}`,
           borderRadius: 12,
           padding: 18,
-          background: dragging ? "#f9fafb" : "white",
+          background: disabled ? "#f3f4f6" : dragging ? "#f9fafb" : "white",
+          opacity: disabled ? 0.7 : 1,
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -101,11 +122,13 @@ export function UploadDropzone({ onFiles }: Props) {
             <button
               type="button"
               onClick={pickFiles}
+              disabled={disabled}
               style={{
                 padding: "10px 12px",
                 borderRadius: 10,
                 border: "1px solid #d1d5db",
                 background: "white",
+                cursor: disabled ? "not-allowed" : "pointer",
               }}
             >
               Velg filer
@@ -113,11 +136,13 @@ export function UploadDropzone({ onFiles }: Props) {
             <button
               type="button"
               onClick={pickFolder}
+              disabled={disabled}
               style={{
                 padding: "10px 12px",
                 borderRadius: 10,
                 border: "1px solid #d1d5db",
                 background: "white",
+                cursor: disabled ? "not-allowed" : "pointer",
               }}
             >
               Velg mappe
@@ -139,6 +164,7 @@ export function UploadDropzone({ onFiles }: Props) {
         accept=".eml,.zip"
         style={{ display: "none" }}
         onChange={onChangeFiles}
+        disabled={disabled}
       />
       <input
         ref={folderInputRef}
@@ -147,10 +173,27 @@ export function UploadDropzone({ onFiles }: Props) {
         accept=".eml"
         style={{ display: "none" }}
         onChange={onChangeFiles}
+        disabled={disabled}
         {...({ webkitdirectory: "true" } as unknown as Record<string, string>)}
       />
     </div>
   );
+}
+
+function summarizeExtensions(files: File[]) {
+  const counts = new Map<string, number>();
+  for (const f of files) {
+    const name = f.name || "";
+    const base = name.split(/[/\\\\]/).pop() ?? "";
+    const dot = base.lastIndexOf(".");
+    const ext = dot >= 0 ? base.slice(dot).toLowerCase() : "(uten endelse)";
+    counts.set(ext, (counts.get(ext) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([ext, n]) => `${ext}×${n}`)
+    .join(", ");
 }
 
 async function collectFilesFromDataTransferItems(items: DataTransferItemList) {
