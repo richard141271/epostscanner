@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 type Props = {
   onFiles: (files: File[]) => Promise<void> | void;
@@ -10,19 +10,6 @@ type Props = {
 export function UploadDropzone({ onFiles, disabled }: Props) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
-
-  const pickFiles = useCallback(() => {
-    if (disabled) return;
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    fileInputRef.current?.click();
-  }, [disabled]);
-  const pickFolder = useCallback(() => {
-    if (disabled) return;
-    if (folderInputRef.current) folderInputRef.current.value = "";
-    folderInputRef.current?.click();
-  }, [disabled]);
 
   const acceptHint = useMemo(
     () => "EML-filer (.eml) eller ZIP (.zip).",
@@ -142,34 +129,79 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={pickFiles}
-              disabled={disabled}
+            <label
               style={{
+                position: "relative",
+                overflow: "hidden",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
                 padding: "10px 12px",
                 borderRadius: 10,
                 border: "1px solid #d1d5db",
                 background: "white",
                 cursor: disabled ? "not-allowed" : "pointer",
+                minWidth: 102,
               }}
             >
               Velg filer
-            </button>
-            <button
-              type="button"
-              onClick={pickFolder}
-              disabled={disabled}
+              <input
+                type="file"
+                multiple
+                accept=".eml,.zip"
+                onChange={onChangeFiles}
+                onInput={onInputFiles}
+                onClick={(e) => {
+                  e.currentTarget.value = "";
+                }}
+                disabled={disabled}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  opacity: 0,
+                  cursor: disabled ? "not-allowed" : "pointer",
+                }}
+              />
+            </label>
+            <label
               style={{
+                position: "relative",
+                overflow: "hidden",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
                 padding: "10px 12px",
                 borderRadius: 10,
                 border: "1px solid #d1d5db",
                 background: "white",
                 cursor: disabled ? "not-allowed" : "pointer",
+                minWidth: 120,
               }}
             >
               Velg mappe
-            </button>
+              <input
+                type="file"
+                multiple
+                accept=".eml"
+                onChange={onChangeFiles}
+                onInput={onInputFiles}
+                onClick={(e) => {
+                  e.currentTarget.value = "";
+                }}
+                disabled={disabled}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  opacity: 0,
+                  cursor: disabled ? "not-allowed" : "pointer",
+                }}
+                {...({ webkitdirectory: "true" } as unknown as Record<string, string>)}
+              />
+            </label>
           </div>
         </div>
 
@@ -179,28 +211,6 @@ export function UploadDropzone({ onFiles, disabled }: Props) {
           <p style={{ marginTop: 12, opacity: 0.75, fontSize: 12 }}>{acceptHint}</p>
         )}
       </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept=".eml,.zip"
-        style={{ display: "none" }}
-        onChange={onChangeFiles}
-        onInput={onInputFiles}
-        disabled={disabled}
-      />
-      <input
-        ref={folderInputRef}
-        type="file"
-        multiple
-        accept=".eml"
-        style={{ display: "none" }}
-        onChange={onChangeFiles}
-        onInput={onInputFiles}
-        disabled={disabled}
-        {...({ webkitdirectory: "true" } as unknown as Record<string, string>)}
-      />
     </div>
   );
 }
