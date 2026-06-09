@@ -4,12 +4,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import DOMPurify from "isomorphic-dompurify";
 
 import { UploadDropzone } from "./UploadDropzone";
-import { getSupabaseBrowser, getTempBucketBrowser } from "@/lib/supabaseBrowser";
 import type { EmailRecord, SearchHit, UploadInitResponse } from "@/lib/types";
 
 type IndexState =
   | { kind: "idle" }
-  | { kind: "uploading"; uploadId: string; uploaded: number; total: number }
+  | {
+      kind: "uploading";
+      uploadId: string;
+      uploaded: number;
+      total: number;
+      bytesUploaded: number;
+      bytesTotal: number;
+      currentFile: string | null;
+    }
   | {
       kind: "indexing";
       uploadId: string;
@@ -52,34 +59,55 @@ export default function AppClient() {
     }
 
     const initJson = (await initRes.json()) as UploadInitResponse;
-    const supabase = getSupabaseBrowser();
-    const bucket = getTempBucketBrowser();
     localStorage.setItem("epostscanner:lastUploadId", initJson.uploadId);
+    const bytesTotal = files.reduce((sum, f) => sum + (f.size || 0), 0);
 
     setIndexState({
       kind: "uploading",
       uploadId: initJson.uploadId,
       uploaded: 0,
       total: files.length,
+      bytesUploaded: 0,
+      bytesTotal,
+      currentFile: null,
     });
+
+    let completedBytes = 0;
 
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
       const upload = initJson.uploads[i];
-      const { error } = await supabase.storage
-        .from(bucket)
-        .uploadToSignedUrl(upload.storageKey, upload.token, file, {
-          contentType: file.type || "application/octet-stream",
-          upsert: true,
-        });
 
-      if (error) {
-        throw new Error(`Opplasting feilet (${file.name}): ${error.message}`);
-      }
+      setIndexState((s) =>
+        s.kind === "uploading" ? { ...s, currentFile: file.name } : s,
+      );
+
+      await uploadFileWithProgress(
+        upload.signedUrl,
+        file,
+        file.type || "application/octet-stream",
+        (loaded) => {
+          setIndexState((s) =>
+            s.kind === "uploading"
+              ? {
+                  ...s,
+                  bytesUploaded: Math.min(s.bytesTotal, completedBytes + loaded),
+                }
+              : s,
+          );
+        },
+      );
+
+      completedBytes += file.size || 0;
 
       setIndexState((s) =>
         s.kind === "uploading"
-          ? { ...s, uploaded: Math.min(s.uploaded + 1, s.total) }
+          ? {
+              ...s,
+              uploaded: Math.min(s.uploaded + 1, s.total),
+              bytesUploaded: Math.min(s.bytesTotal, completedBytes),
+              currentFile: null,
+            }
           : s,
       );
     }
@@ -280,9 +308,26 @@ export default function AppClient() {
 
       <footer style={{ marginTop: 16, opacity: 0.7, fontSize: 12 }}>
         {indexState.kind === "idle" ? "Klar." : null}
-        {indexState.kind === "uploading"
-          ? `Laster opp… ${indexState.uploaded}/${indexState.total}`
-          : null}
+        {indexState.kind === "uploading" ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div>
+              Laster opp… {indexState.uploaded}/{indexState.total} ·{" "}
+              {formatBytes(indexState.bytesUploaded)} / {formatBytes(indexState.bytesTotal)} (
+              {indexState.bytesTotal ? Math.round((indexState.bytesUploaded / indexState.bytesTotal) * 100) : 0}
+              %) · gjenstår {formatBytes(Math.max(0, indexState.bytesTotal - indexState.bytesUploaded))}
+              {indexState.currentFile ? ` · ${indexState.currentFile}` : ""}
+            </div>
+            <div style={{ height: 8, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${indexState.bytesTotal ? Math.min(100, (indexState.bytesUploaded / indexState.bytesTotal) * 100) : 0}%`,
+                  background: "#111827",
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
         {indexState.kind === "indexing"
           ? `Indekserer… ${indexState.processed}${indexState.total ? `/${indexState.total}` : ""} (siste batch: ${indexState.lastBatch}, feil: ${indexState.errors})`
           : null}
@@ -385,4 +430,36 @@ function formatBytes(bytes: number) {
   if (mb < 1024) return `${mb.toFixed(1)} MB`;
   const gb = mb / 1024;
   return `${gb.toFixed(1)} GB`;
+}
+
+function uploadFileWithProgress(
+  signedUrl: string,
+  file: File,
+  contentType: string,
+  onProgress: (loadedBytes: number) => void,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", signedUrl, true);
+    xhr.setRequestHeader("content-type", contentType);
+    xhr.setRequestHeader("cache-control", "max-age=3600");
+    xhr.setRequestHeader("x-upsert", "true");
+
+    xhr.upload.onprogress = (e) => {
+      if (typeof e.loaded === "number") onProgress(e.loaded);
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Upload feilet (${xhr.status}): ${xhr.responseText || xhr.statusText}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Upload feilet (nettverksfeil)"));
+    xhr.onabort = () => reject(new Error("Upload avbrutt"));
+
+    xhr.send(file);
+  });
 }
